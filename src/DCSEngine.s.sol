@@ -2,11 +2,11 @@
 pragma solidity ^0.8.18;
 
 import {DecentralizedStableCoin} from "./DecentralizedStableCoin.s.sol";
-import {ReentrantGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AggregatorV3Interface} from "@chainlink/contracts/v0.8/shared/interfaces/AggregatorV3Interface.sol";
 
-contract DSCEngine is ReentrantGuard {
+contract DSCEngine is ReentrancyGuard {
     /**
      * Error
      */
@@ -146,7 +146,7 @@ contract DSCEngine is ReentrantGuard {
         returns (uint256 totalDscMinted, uint256 collateralValueInUsd)
     {
         totalDscMinted = s_DSCMinted[user];
-        collateralValueInUsd = getAccountCollateralValue[user];
+        collateralValueInUsd = getAccountCollateralValue(user);
     }
 
     // 计算健康因子
