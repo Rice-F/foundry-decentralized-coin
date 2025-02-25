@@ -19,8 +19,8 @@ contract DSCEngine is ReentrantGuard {
      * State Variables
      */
     uint256 private constant PRECISION = 1e18; // 精度
-    uint256 private constant ADDITIONAL_FEED_PRECISION = 1e8; // priceFeed精度
-    uint256 private constant LIQUIDATION_THRESHOLD = 50; // 清算阈值
+    uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10; // priceFeed精度
+    uint256 private constant LIQUIDATION_THRESHOLD = 50; // 清算阈值 => 50%
     uint256 private constant LIQUIDATION_PRECISION = 100; // 清算阈值精度
 
     mapping(address token => address priceFeed) private s_tokenToPriceFeeds; // {token contract地址: 对应的priceFeed合约地址}
@@ -101,7 +101,7 @@ contract DSCEngine is ReentrantGuard {
             tokenCollateralAddress,
             amountCollateral
         );
-        // 转移代币 transferFrom(from, to, value)
+        // 转移代币至当前合约 transferFrom(from, to, value)
         bool success = IERC20(tokenCollateralAddress).transferFrom(
             msg.sender,
             address(this),
@@ -149,11 +149,13 @@ contract DSCEngine is ReentrantGuard {
         collateralValueInUsd = getAccountCollateralValue[user];
     }
 
+    // 计算健康因子
     function _healthFactor(address user) private view returns (uint256) {
         (
             uint256 totalDscMinted,
             uint256 collateralValueInUsd
         ) = _getAccountInformation(user);
+        // （抵押物的美元价值 * 健康阈值）/ 清算精度
         uint256 collateralAdjustedForThreshold = (collateralValueInUsd *
             LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
         return (collateralAdjustedForThreshold * PRECISION) / totalDscMinted;
@@ -189,6 +191,9 @@ contract DSCEngine is ReentrantGuard {
             s_tokenToPriceFeeds[token]
         );
         (, int256 price, , , ) = priceFeed.latestRoundData();
-        return ((uint256(price) * amount) / ADDITIONAL_FEED_PRECISION);
+        // price的精度是8位，amount的精度是18位，price * 1e10 * amount / 1e18
+        // uint256(price) * amount / 1e8;
+        return
+            ((uint256(price) * ADDITIONAL_FEED_PRECISION) * amount) / PRECISION;
     }
 }
