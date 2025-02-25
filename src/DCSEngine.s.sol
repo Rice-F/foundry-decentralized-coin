@@ -14,6 +14,8 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength(); // token地址 => priceFeed地址
     error DSCEngine__TokenNotAllowed(); // token地址不合法
     error DSCEngine__TransferFailed(); // 转账失败
+    error DSCEngine__HealthFactorIsBroken(uint256 healthFactor); // 健康因子小于1
+    error DSCEngine__MintFailed(); // 铸造失败
 
     /**
      * State Variables
@@ -22,6 +24,7 @@ contract DSCEngine is ReentrancyGuard {
     uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10; // priceFeed精度
     uint256 private constant LIQUIDATION_THRESHOLD = 50; // 清算阈值 => 50%
     uint256 private constant LIQUIDATION_PRECISION = 100; // 清算阈值精度
+    uint256 private constant MIN_HEALTH_FACTOR = 1;
 
     mapping(address token => address priceFeed) private s_tokenToPriceFeeds; // {token contract地址: 对应的priceFeed合约地址}
     mapping(address user => mapping(address token => uint256 amount)) // {user: {token类型1: amount, token类型2: amount}}
@@ -123,6 +126,10 @@ contract DSCEngine is ReentrancyGuard {
     ) external moreThanZero(amountDscToMint) nonReentrant {
         s_DSCMinted[msg.sender] += amountDscToMint;
         _revertIfHealthFactorIsBroken(msg.sender);
+        bool minted = i_dsc.mint(msg.sender, amountDscToMint);
+        if (!minted) {
+            revert DSCEngine__MintFailed();
+        }
     }
 
     // burn
@@ -162,10 +169,10 @@ contract DSCEngine is ReentrancyGuard {
     }
 
     function _revertIfHealthFactorIsBroken(address user) internal view {
-        // uint256 userHealthFactor = _healthFactor(user);
-        // if (userHealthFactor < MIN_HEALTH_FACTOR) {
-        //     revert DSCEngine__HealthFactorIsBroken(userHealthFactor);
-        // }
+        uint256 userHealthFactor = _healthFactor(user);
+        if (userHealthFactor < MIN_HEALTH_FACTOR) {
+            revert DSCEngine__HealthFactorIsBroken(userHealthFactor);
+        }
     }
 
     /**
