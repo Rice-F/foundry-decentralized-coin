@@ -6,13 +6,13 @@ import {DecentralizedStableCoin} from "../src/DecentralizedStableCoin.s.sol";
 import {DSCEngine} from "../src/DCSEngine.s.sol";
 import {HelperConfig} from "./HelperConfig.s.sol";
 
-contract DeployDCS is Script {
+contract DeployDSC is Script {
     address[] public tokenAddresses;
     address[] public priceFeedAddresses;
 
     function run()
         external
-        returns (DecentralizedStableCoin, DSCEngine, address)
+        returns (DecentralizedStableCoin, DSCEngine, HelperConfig)
     {
         HelperConfig helperConfig = new HelperConfig();
         (
@@ -35,6 +35,6 @@ contract DeployDCS is Script {
         );
         dsc.transferOwnership(address(dscEngine)); // onlyOwner msg.sender => dscEngine
         vm.stopBroadcast();
-        return (dsc, dscEngine, address(dscEngine));
+        return (dsc, dscEngine, helperConfig);
     }
 }
