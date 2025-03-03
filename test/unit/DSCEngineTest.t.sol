@@ -26,7 +26,7 @@ contract DCSEngineTest is Test {
         (dsc, dscEngine, helperConfig) = deployDSC.run();
         (ethUsdPriceFeed, , weth, , ) = helperConfig.activeNetworkConfig();
 
-        ERC20Mock(weth).mint(USER, STARTING_USER_BALANCE);
+        ERC20Mock(weth).mint(USER, STARTING_USER_BALANCE); // 类型转换，转换为符合ERC20的代币
     }
 
     /**

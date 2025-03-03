@@ -44,6 +44,13 @@ contract DSCEngine is ReentrancyGuard {
         uint256 amount
     );
 
+    // 赎回
+    event CollateralRedeemed(
+        address indexed user,
+        address indexed token,
+        uint256 amount
+    );
+
     /**
      * Modifiers
      */
@@ -83,14 +90,21 @@ contract DSCEngine is ReentrancyGuard {
      * External Functions
      */
     // 抵押并铸造DSC
-    function depositCollateralAndMintDsc() external {}
+    function depositCollateralAndMintDsc(
+        address tokenCollateralAddress,
+        uint256 amountCollateral,
+        uint256 amountDscToMint
+    ) external {
+        depositCollateral(tokenCollateralAddress, amountCollateral);
+        mintDsc(amountDscToMint);
+    }
 
     // 抵押
     function depositCollateral(
         address tokenCollateralAddress,
         uint256 amountCollateral
     )
-        external
+        public
         moreThanZero(amountCollateral)
         isAllowedToken(tokenCollateralAddress)
         nonReentrant
@@ -104,7 +118,7 @@ contract DSCEngine is ReentrancyGuard {
             tokenCollateralAddress,
             amountCollateral
         );
-        // 转移代币至当前合约 transferFrom(from, to, value)
+        // 转移代币至当前合约 IERC20合约中的transferFrom(from, to, value)
         bool success = IERC20(tokenCollateralAddress).transferFrom(
             msg.sender,
             address(this),
@@ -116,14 +130,43 @@ contract DSCEngine is ReentrancyGuard {
     }
 
     // 赎回
-    function redeemCollateralForDsc() external {}
+    function redeemCollateralForDsc(
+        address tokenCollateralAddress,
+        uint256 amountCollateral,
+        uint256 amountDscToBurn
+    ) external {
+        burnDsc(amountDscToBurn);
+        redeemCollateral(tokenCollateralAddress, amountCollateral);
+    }
 
-    function redeemCollateral() external {}
+    function redeemCollateral(
+        address tokenCollateralAddress,
+        uint256 amountCollateral
+    ) public moreThanZero(amountCollateral) nonReentrant {
+        // 变更用户抵押的代币数量
+        s_collateralDeposited[msg.sender][
+            tokenCollateralAddress
+        ] -= amountCollateral;
+        emit CollateralRedeemed(
+            msg.sender,
+            tokenCollateralAddress,
+            amountCollateral
+        );
+        // 将代币从当前合约转出 IERC20合约中的transfer(to, value)
+        bool success = IERC20(tokenCollateralAddress).transfer(
+            msg.sender,
+            amountCollateral
+        );
+        if (!success) {
+            revert DSCEngine__TransferFailed();
+        }
+        _revertIfHealthFactorIsBroken(msg.sender);
+    }
 
     // mint
     function mintDsc(
         uint256 amountDscToMint
-    ) external moreThanZero(amountDscToMint) nonReentrant {
+    ) public moreThanZero(amountDscToMint) nonReentrant {
         s_DSCMinted[msg.sender] += amountDscToMint;
         _revertIfHealthFactorIsBroken(msg.sender);
         bool minted = i_dsc.mint(msg.sender, amountDscToMint);
@@ -133,7 +176,16 @@ contract DSCEngine is ReentrancyGuard {
     }
 
     // burn
-    function burnDsc() external {}
+    function burnDsc(uint256 amount) public moreThanZero(amount) {
+        s_DSCMinted[msg.sender] -= amount;
+        // 将用户的DSC转移至当前合约
+        bool success = i_dsc.transferFrom(msg.sender, address(this), amount);
+        if (!success) {
+            revert DSCEngine__TransferFailed();
+        }
+        i_dsc.burn(amount);
+        _revertIfHealthFactorIsBroken(msg.sender);
+    }
 
     // 清算
     function liquidate() external {}
