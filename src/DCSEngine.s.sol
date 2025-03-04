@@ -14,8 +14,10 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength(); // token地址 => priceFeed地址
     error DSCEngine__TokenNotAllowed(); // token地址不合法
     error DSCEngine__TransferFailed(); // 转账失败
-    error DSCEngine__HealthFactorIsBroken(uint256 healthFactor); // 健康因子小于1
+    error DSCEngine__HealthFactorIsBroken(uint256 healthFactor); // 健康因子 < 1
     error DSCEngine__MintFailed(); // 铸造失败
+    error DSCEngine__HealthFactorOk(); // 健康因子 > 1
+    error DSCEngine__HealthFactorNotImproved(); // 健康因子没有得到改善
 
     /**
      * State Variables
@@ -24,7 +26,8 @@ contract DSCEngine is ReentrancyGuard {
     uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10; // priceFeed精度
     uint256 private constant LIQUIDATION_THRESHOLD = 50; // 清算阈值 => 50%
     uint256 private constant LIQUIDATION_PRECISION = 100; // 清算阈值精度
-    uint256 private constant MIN_HEALTH_FACTOR = 1;
+    uint256 private constant MIN_HEALTH_FACTOR = 1e18; // 健康因子
+    uint256 private constant LIQUIDATION_BONUS = 10; // 清算奖励
 
     mapping(address token => address priceFeed) private s_tokenToPriceFeeds; // {token contract地址: 对应的priceFeed合约地址}
     mapping(address user => mapping(address token => uint256 amount)) // {user: {token类型1: amount, token类型2: amount}}
@@ -46,7 +49,8 @@ contract DSCEngine is ReentrancyGuard {
 
     // 赎回
     event CollateralRedeemed(
-        address indexed user,
+        address indexed redeemedFrom,
+        address indexed redeemedTo,
         address indexed token,
         uint256 amount
     );
@@ -143,23 +147,29 @@ contract DSCEngine is ReentrancyGuard {
         address tokenCollateralAddress,
         uint256 amountCollateral
     ) public moreThanZero(amountCollateral) nonReentrant {
-        // 变更用户抵押的代币数量
-        s_collateralDeposited[msg.sender][
-            tokenCollateralAddress
-        ] -= amountCollateral;
-        emit CollateralRedeemed(
-            msg.sender,
+        // // 变更用户抵押的代币数量
+        // s_collateralDeposited[msg.sender][
+        //     tokenCollateralAddress
+        // ] -= amountCollateral;
+        // emit CollateralRedeemed(
+        //     msg.sender,
+        //     tokenCollateralAddress,
+        //     amountCollateral
+        // );
+        // // 将代币从当前合约转出 IERC20合约中的transfer(to, value)
+        // bool success = IERC20(tokenCollateralAddress).transfer(
+        //     msg.sender,
+        //     amountCollateral
+        // );
+        // if (!success) {
+        //     revert DSCEngine__TransferFailed();
+        // }
+        _redeemCollateral(
             tokenCollateralAddress,
-            amountCollateral
-        );
-        // 将代币从当前合约转出 IERC20合约中的transfer(to, value)
-        bool success = IERC20(tokenCollateralAddress).transfer(
+            amountCollateral,
             msg.sender,
-            amountCollateral
+            msg.sender
         );
-        if (!success) {
-            revert DSCEngine__TransferFailed();
-        }
         _revertIfHealthFactorIsBroken(msg.sender);
     }
 
@@ -177,18 +187,55 @@ contract DSCEngine is ReentrancyGuard {
 
     // burn
     function burnDsc(uint256 amount) public moreThanZero(amount) {
-        s_DSCMinted[msg.sender] -= amount;
-        // 将用户的DSC转移至当前合约
-        bool success = i_dsc.transferFrom(msg.sender, address(this), amount);
-        if (!success) {
-            revert DSCEngine__TransferFailed();
-        }
-        i_dsc.burn(amount);
+        // s_DSCMinted[msg.sender] -= amount;
+        // // 将用户的DSC转移至当前合约
+        // bool success = i_dsc.transferFrom(msg.sender, address(this), amount);
+        // if (!success) {
+        //     revert DSCEngine__TransferFailed();
+        // }
+        // i_dsc.burn(amount);
+        _burnDsc(amount, msg.sender, msg.sender);
         _revertIfHealthFactorIsBroken(msg.sender);
     }
 
     // 清算
-    function liquidate() external {}
+    // debtToCover DSC对应的美元价值
+    function liquidate(
+        address tokenCollateralAddress,
+        address user,
+        uint256 debtToCover
+    ) external moreThanZero(debtToCover) nonReentrant {
+        uint256 startingHealthFactor = _healthFactor(user);
+        if (startingHealthFactor > MIN_HEALTH_FACTOR) {
+            revert DSCEngine__HealthFactorOk();
+        }
+        // 债务对应的token数量
+        uint256 tokenAmountFromDebtToCover = getTokenAmountFromUsd(
+            tokenCollateralAddress,
+            debtToCover
+        );
+        // 奖励 = 债务对应的token数量 * 10%
+        uint256 bonusCollateral = (tokenAmountFromDebtToCover *
+            LIQUIDATION_BONUS) / LIQUIDATION_PRECISION;
+        // 清算人获得的所有抵押物 = 债务对应的token数量 + 奖励
+        uint256 totalCollateralToRedeem = tokenAmountFromDebtToCover +
+            bonusCollateral;
+        // 将清算人获得的抵押物从当前合约转出
+        _redeemCollateral(
+            tokenCollateralAddress,
+            totalCollateralToRedeem,
+            user,
+            msg.sender
+        );
+        // burn
+        _burnDsc(debtToCover, user, msg.sender);
+
+        uint256 endingHealthFactor = _healthFactor(user);
+        if (endingHealthFactor < startingHealthFactor) {
+            revert DSCEngine__HealthFactorNotImproved();
+        }
+        _revertIfHealthFactorIsBroken(msg.sender);
+    }
 
     // 健康系数
     function getHealthFactor() external {}
@@ -196,6 +243,50 @@ contract DSCEngine is ReentrancyGuard {
     /**
      * Private & Internal View Functions
      */
+    // burn
+    function _burnDsc(
+        uint256 amountDscToBurn,
+        address burnFrom,
+        address dscFrom
+    ) private {
+        s_DSCMinted[burnFrom] -= amountDscToBurn;
+        // 将用户的DSC转移至当前合约
+        bool success = i_dsc.transferFrom(
+            dscFrom,
+            address(this),
+            amountDscToBurn
+        );
+        if (!success) {
+            revert DSCEngine__TransferFailed();
+        }
+        i_dsc.burn(amountDscToBurn);
+    }
+
+    // 赎回
+    function _redeemCollateral(
+        address tokenCollateralAddress,
+        uint256 amountCollateral,
+        address from,
+        address to
+    ) private {
+        // 变更用户抵押的代币数量
+        s_collateralDeposited[from][tokenCollateralAddress] -= amountCollateral;
+        emit CollateralRedeemed(
+            from,
+            to,
+            tokenCollateralAddress,
+            amountCollateral
+        );
+        // 将代币从当前合约转出 IERC20合约中的transfer(to, value)
+        bool success = IERC20(tokenCollateralAddress).transfer(
+            to,
+            amountCollateral
+        );
+        if (!success) {
+            revert DSCEngine__TransferFailed();
+        }
+    }
+
     // 获取user账户信息
     function _getAccountInformation(
         address user
@@ -230,6 +321,21 @@ contract DSCEngine is ReentrancyGuard {
     /**
      * Public & External View Functions
      */
+    // 根据当前债务计算token数量
+    function getTokenAmountFromUsd(
+        address tokenCollateralAddress,
+        uint256 debtToCover
+    ) public view returns (uint256) {
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(
+            s_tokenToPriceFeeds[tokenCollateralAddress]
+        );
+        (, int256 price, , , ) = priceFeed.latestRoundData();
+        // DSC对应的美元价值 / token对应的美元价值
+        return
+            ((debtToCover * PRECISION) / uint256(price)) *
+            ADDITIONAL_FEED_PRECISION;
+    }
+
     // 计算user的总token资产价值多少美元（所有token类型资产累加）
     function getAccountCollateralValue(
         address user
