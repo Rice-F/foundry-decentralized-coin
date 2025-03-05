@@ -24,7 +24,7 @@ contract DCSEngineTest is Test {
         deployDSC = new DeployDSC();
 
         (dsc, dscEngine, helperConfig) = deployDSC.run();
-        (ethUsdPriceFeed, , weth, , ) = helperConfig.activeNetworkConfig();
+        (ethUsdPriceFeed, weth, , , ) = helperConfig.activeNetworkConfig();
 
         ERC20Mock(weth).mint(USER, STARTING_USER_BALANCE); // 类型转换，转换为符合ERC20的代币
     }
@@ -35,6 +35,7 @@ contract DCSEngineTest is Test {
     function testGetUsdValue() public view {
         uint256 ethAmount = 15e18; // 15e18 * 2000/ETH = 30000e18
         uint256 expectedUsd = 30000e18;
+        // console.log("weth", weth);
         uint256 actualUsd = dscEngine.getUsdValue(weth, ethAmount);
         assertEq(expectedUsd, actualUsd);
     }

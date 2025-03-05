@@ -14,8 +14,8 @@ contract HelperConfig is Script {
 
     struct NetworkConfig {
         address wethUsdPriceFeed;
-        address wbtcUsdPriceFeed;
         address weth;
+        address wbtcUsdPriceFeed;
         address wbtc;
         uint256 deployerKey;
     }
@@ -39,8 +39,8 @@ contract HelperConfig is Script {
     {
         sepoliaNetworkConfig = NetworkConfig({
             wethUsdPriceFeed: 0x694AA1769357215DE4FAC081bf1f309aDC325306,
-            wbtcUsdPriceFeed: 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43,
             weth: 0xdd13E55209Fd76AfE204dBda4007C227904f0a81,
+            wbtcUsdPriceFeed: 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43,
             wbtc: 0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063,
             deployerKey: vm.envUint("PRIVATE_KEY")
         });
@@ -72,8 +72,8 @@ contract HelperConfig is Script {
 
         anvilNetworkConfig = NetworkConfig({
             wethUsdPriceFeed: address(ethUsdPriceFeed),
-            wbtcUsdPriceFeed: address(btcUsdPriceFeed),
             weth: address(wethMock),
+            wbtcUsdPriceFeed: address(btcUsdPriceFeed),
             wbtc: address(wbtcMock),
             deployerKey: DEFAULT_ANVIL_PRIVATE_KEY
         });

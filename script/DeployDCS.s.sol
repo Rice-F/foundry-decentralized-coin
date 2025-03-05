@@ -7,8 +7,8 @@ import {DSCEngine} from "../src/DCSEngine.s.sol";
 import {HelperConfig} from "./HelperConfig.s.sol";
 
 contract DeployDSC is Script {
-    address[] public tokenAddresses;
-    address[] public priceFeedAddresses;
+    address[] public tokenAddrList;
+    address[] public priceFeedAddrList;
 
     function run()
         external
@@ -17,20 +17,20 @@ contract DeployDSC is Script {
         HelperConfig helperConfig = new HelperConfig();
         (
             address wethUsdPriceFeed,
-            address wbtcUsdPriceFeed,
             address weth,
+            address wbtcUsdPriceFeed,
             address wbtc,
             uint256 deployerKey
         ) = helperConfig.activeNetworkConfig();
 
-        tokenAddresses = [weth, wbtc];
-        priceFeedAddresses = [wethUsdPriceFeed, wbtcUsdPriceFeed];
+        tokenAddrList = [weth, wbtc];
+        priceFeedAddrList = [wethUsdPriceFeed, wbtcUsdPriceFeed];
 
         vm.startBroadcast(deployerKey); // 使用anvil的默认私钥
         DecentralizedStableCoin dsc = new DecentralizedStableCoin();
         DSCEngine dscEngine = new DSCEngine(
-            tokenAddresses,
-            priceFeedAddresses,
+            tokenAddrList,
+            priceFeedAddrList,
             address(dsc)
         );
         dsc.transferOwnership(address(dscEngine)); // onlyOwner msg.sender => dscEngine
