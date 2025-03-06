@@ -106,7 +106,7 @@ contract DSCEngine is ReentrancyGuard {
     // 抵押
     function depositCollateral(
         address collateralAddr,
-        uint256 collateralAmount
+        uint256 collateralAmount // 抵押物数量
     )
         public
         moreThanZero(collateralAmount)
@@ -319,8 +319,8 @@ contract DSCEngine is ReentrancyGuard {
         (, int256 tokenPrice, , , ) = priceFeed.latestRoundData();
         // DSC对应的美元价值 / token对应的美元价值
         return
-            ((debtToCover * PRECISION) / uint256(tokenPrice)) *
-            ADDITIONAL_FEED_PRECISION;
+            (debtToCover * PRECISION) /
+            (uint256(tokenPrice) * ADDITIONAL_FEED_PRECISION);
     }
 
     // 计算user的总token资产价值多少美元（所有token类型资产累加）
@@ -347,5 +347,15 @@ contract DSCEngine is ReentrancyGuard {
         // uint256(price) * amount / 1e8;
         return
             ((uint256(price) * ADDITIONAL_FEED_PRECISION) * amount) / PRECISION;
+    }
+
+    function getAccountInformation(
+        address user
+    )
+        external
+        view
+        returns (uint256 totalDscMinted, uint256 collateralValueInUsd)
+    {
+        (totalDscMinted, collateralValueInUsd) = _getAccountInformation(user);
     }
 }
