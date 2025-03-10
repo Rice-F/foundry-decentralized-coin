@@ -18,7 +18,8 @@ contract DCSEngineTest is Test {
     address weth;
     address public USER = makeAddr("user");
     uint256 public constant AMOUNT_COLLATERAL = 10 ether; // 抵押物数量
-    uint256 public constant STARTING_USER_BALANCE = 10 ether;
+    uint256 public constant STARTING_USER_BALANCE = 10 ether; // 用户初始余额
+    uint256 public constant DSC_MINTED = 1 ether; // DSC数量
 
     function setUp() public {
         deployDSC = new DeployDSC();
@@ -62,6 +63,7 @@ contract DCSEngineTest is Test {
         assertEq(expectedUsd, actualUsd);
     }
 
+    // 抵押0个抵押物
     function testDepositCollateralWithZero() public {
         vm.startPrank(USER); // 以下操作都使用该模拟用户
         // ERC20Mock(weth) 将weth地址转为ERC20Mock合约
@@ -72,7 +74,8 @@ contract DCSEngineTest is Test {
         vm.stopPrank();
     }
 
-    function testRevertsWithUnapprovedCollateral() public {
+    // 抵押超出接收范围的抵押物
+    function testRevertsWithOutOfScopeCollateral() public {
         ERC20Mock token = new ERC20Mock();
         vm.startPrank(USER);
         vm.expectRevert(DSCEngine.DSCEngine__TokenNotAllowed.selector);
@@ -80,17 +83,19 @@ contract DCSEngineTest is Test {
         vm.stopPrank();
     }
 
-    modifier depositedCollateral() {
+    // modifier 授权+抵押
+    modifier depositedCollateral(uint256 collateralAmount) {
         vm.startPrank(USER);
-        ERC20Mock(weth).approve(address(dscEngine), AMOUNT_COLLATERAL);
-        dscEngine.depositCollateral(weth, AMOUNT_COLLATERAL);
+        ERC20Mock(weth).approve(address(dscEngine), collateralAmount);
+        dscEngine.depositCollateral(weth, collateralAmount);
         vm.stopPrank();
         _;
     }
 
+    // 抵押并获取账户信息
     function testCanDepositCollateralAndGetAccountInfo()
         public
-        depositedCollateral
+        depositedCollateral(uint256(AMOUNT_COLLATERAL))
     {
         (uint256 totalDscMinted, uint256 collateralValueInUsd) = dscEngine
             .getAccountInformation(USER);
@@ -102,4 +107,67 @@ contract DCSEngineTest is Test {
         assertEq(totalDscMinted, 0); // 只调用了depositCollateral，没有调用mintDsc
         assertEq(expectedCollateralAmount, AMOUNT_COLLATERAL);
     }
+
+    // modifier 授权+抵押+mint
+    modifier depositedAndMint(uint256 collateralAmount, uint256 mintAmount) {
+        vm.startPrank(USER);
+        ERC20Mock(weth).approve(address(dscEngine), collateralAmount);
+        dscEngine.depositCollateral(weth, collateralAmount);
+        dscEngine.mintDsc(mintAmount);
+        vm.stopPrank();
+        _;
+    }
+
+    // mint dsc并获取账户信息
+    function testMintAndGetAccountInfo()
+        public
+        depositedAndMint(uint256(AMOUNT_COLLATERAL), uint256(DSC_MINTED))
+    {
+        uint256 expectedTotalDscMinted = dscEngine.getDscMinted(USER);
+        assertEq(expectedTotalDscMinted, DSC_MINTED);
+    }
+
+    // 计算健康因子
+    function testCalculateHealthFactor()
+        public
+        depositedAndMint(uint256(AMOUNT_COLLATERAL), uint256(DSC_MINTED))
+    {
+        (uint256 totalDscMinted, uint256 collateralValueInUsd) = dscEngine
+            .getAccountInformation(USER);
+        (
+            uint256 LIQUIDATION_THRESHOLD,
+            uint256 LIQUIDATION_PRECISION,
+
+        ) = dscEngine.getLiquidationData();
+        uint256 currentHealthFactor = (((collateralValueInUsd *
+            LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION) * 1e18) /
+            totalDscMinted;
+        uint256 expectedHealthFactor = dscEngine.getHealthFactor(USER);
+        assertEq(currentHealthFactor, expectedHealthFactor);
+    }
+
+    // 测试健康因子是否broke
+    function testIfHealthFactorIsBroken()
+        public
+        depositedCollateral(uint256(AMOUNT_COLLATERAL))
+    {
+        vm.startPrank(USER);
+        vm.expectRevert(DSCEngine.DSCEngine__HealthFactorIsBroken.selector);
+        dscEngine.mintDsc(25000 ether);
+    }
+
+    // 测试合理抵押物数量
+    function testLiquidateFactorOk()
+        public
+        depositedAndMint(uint256(AMOUNT_COLLATERAL), uint256(DSC_MINTED))
+    {
+        vm.startPrank(USER);
+        vm.expectRevert(DSCEngine.DSCEngine__HealthFactorOk.selector);
+        dscEngine.liquidate(address(weth), USER, DSC_MINTED);
+    }
+
+    function testRedeemDsc()
+        public
+        depositedAndMint(uint256(AMOUNT_COLLATERAL), uint256(DSC_MINTED))
+    {}
 }

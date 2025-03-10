@@ -14,7 +14,7 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength(); // token地址 => priceFeed地址
     error DSCEngine__TokenNotAllowed(); // token地址不合法
     error DSCEngine__TransferFailed(); // 转账失败
-    error DSCEngine__HealthFactorIsBroken(uint256 healthFactor); // 健康因子 < 1
+    error DSCEngine__HealthFactorIsBroken(); // 健康因子 < 1
     error DSCEngine__MintFailed(); // 铸造失败
     error DSCEngine__HealthFactorOk(); // 健康因子 > 1
     error DSCEngine__HealthFactorNotImproved(); // 健康因子没有得到改善
@@ -292,6 +292,15 @@ contract DSCEngine is ReentrancyGuard {
             uint256 totalDscMinted,
             uint256 collateralValueInUsd
         ) = _getAccountInformation(user);
+        return _calculateHealthFactor(totalDscMinted, collateralValueInUsd);
+    }
+
+    function _calculateHealthFactor(
+        uint256 totalDscMinted,
+        uint256 collateralValueInUsd
+    ) private pure returns (uint256) {
+        // 没有DSC铸造，表示无负债，健康因子无穷大
+        if (totalDscMinted == 0) return type(uint256).max;
         // （抵押物的美元价值 * 健康阈值）/ 清算精度
         uint256 collateralAdjustedForThreshold = (collateralValueInUsd *
             LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
@@ -301,7 +310,7 @@ contract DSCEngine is ReentrancyGuard {
     function _revertIfHealthFactorIsBroken(address user) internal view {
         uint256 userHealthFactor = _healthFactor(user);
         if (userHealthFactor < MIN_HEALTH_FACTOR) {
-            revert DSCEngine__HealthFactorIsBroken(userHealthFactor);
+            revert DSCEngine__HealthFactorIsBroken();
         }
     }
 
@@ -358,4 +367,32 @@ contract DSCEngine is ReentrancyGuard {
     {
         (totalDscMinted, collateralValueInUsd) = _getAccountInformation(user);
     }
+
+    function getDscMinted(address user) external view returns (uint256) {
+        return s_DSCMinted[user];
+    }
+
+    function getHealthFactor(address user) external view returns (uint256) {
+        return _healthFactor(user);
+    }
+
+    function getLiquidationData()
+        external
+        pure
+        returns (uint256, uint256, uint256)
+    {
+        return (
+            LIQUIDATION_THRESHOLD,
+            LIQUIDATION_PRECISION,
+            LIQUIDATION_BONUS
+        );
+    }
+
+    // function getLiquidate(
+    //     address collateralAddr,
+    //     address user,
+    //     uint256 debtToCover
+    // ) external view {
+    //     return liquidate(collateralAddr, user, debtToCover);
+    // }
 }
