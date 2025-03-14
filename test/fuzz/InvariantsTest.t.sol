@@ -8,6 +8,7 @@ import {DSCEngine} from "../../src/DCSEngine.s.sol";
 import {DeployDSC} from "../../script/DeployDCS.s.sol";
 import {HelperConfig} from "../../script/HelperConfig.s.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Handler} from "./Handler.t.sol";
 
 contract InvariantsTest is StdInvariant, Test {
     DeployDSC deployer;
@@ -16,12 +17,17 @@ contract InvariantsTest is StdInvariant, Test {
     HelperConfig helperConfig;
     address weth;
     address wbtc;
+    Handler handler;
 
     function setUp() external {
         deployer = new DeployDSC();
         (dsc, dscEngine, helperConfig) = deployer.run();
         (, weth, , wbtc, ) = helperConfig.activeNetworkConfig();
-        targetContract(address(dscEngine));
+
+        // targetContract(address(dscEngine));
+
+        handler = new Handler(dscEngine, dsc);
+        targetContract(address(handler));
     }
 
     function invariant_protocolMustHaveMoreValueThanTotalSupply() public view {
@@ -33,5 +39,9 @@ contract InvariantsTest is StdInvariant, Test {
         uint256 wbtcValue = dscEngine.getUsdValue(wbtc, totalWbtcDeposited);
 
         assert(totalSupply <= wethValue + wbtcValue);
+    }
+
+    function invariant_gettersShouldNotRevert() public view {
+        dscEngine.getLiquidationData();
     }
 }

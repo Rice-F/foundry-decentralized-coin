@@ -388,11 +388,15 @@ contract DSCEngine is ReentrancyGuard {
         );
     }
 
-    // function getLiquidate(
-    //     address collateralAddr,
-    //     address user,
-    //     uint256 debtToCover
-    // ) external view {
-    //     return liquidate(collateralAddr, user, debtToCover);
-    // }
+    function getCollateralTokens() external view returns (address[] memory) {
+        return s_tokenAddrList;
+    }
+
+    // 获取用户所有抵押的代币数量
+    function getCollateralBalanceOfUser(
+        address user,
+        address token
+    ) external view returns (uint256) {
+        return s_collateralDeposited[user][token];
+    }
 }
